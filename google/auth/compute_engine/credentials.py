@@ -7,6 +7,7 @@ from google.auth import iam
 from google.auth import jwt
 from google.auth import metrics
 from google.auth.compute_engine import _metadata
+from google.auth.transport import requests as google_auth_requests
 from google.oauth2 import _client
 
 
@@ -23,6 +24,8 @@ class Credentials(credentials.Scoped, credentials.CredentialsWithQuotaProject):
         self._quota_project_id = quota_project_id
         self._scopes = scopes
         self._default_scopes = default_scopes
+        self._universe_domain_cached = False
+        self._universe_domain_request = google_auth_requests.Request()
 
     # 서비스 계정의 정보를 가져온다
     # 계정 정보를 가져와 해당 계정의 이메일을 업데이트하고, 필요한 경우에만 스코프(권한) 정보를 업데이트하는 함수
@@ -67,7 +70,16 @@ class Credentials(credentials.Scoped, credentials.CredentialsWithQuotaProject):
     def requires_scopes(self):
         return not self._scopes
 
-    # Credentials 클래스의 새로운 인스턴스를 반환하는 메소드 (단, 일부 값은 현재 인스턴스의 값으로 초기화하여 반환한다)
+    @property
+    def universe_domain(self):
+        if self._universe_domain_cached:
+            return self._universe_domain
+        self._universe_domain = _metadata.get_universe_domain(
+            self._universe_domain_request
+        )
+        self._universe_domain_cached = True
+        return self._universe_domain
+
     @_helpers.copy_docstring(credentials.CredentialsWithQuotaProject)
     def with_quota_project(self, quota_project_id):
         return self.__class__(

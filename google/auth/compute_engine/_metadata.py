@@ -106,15 +106,43 @@ def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
 # 메타데이터 서버에서 리소스를 가져오는 함수
 # HTTP GET 요청을 사용하여 메타데이터 서버에 특정 리소스를 요청하고 응답을 처리하여 결과를 반환한다
 def get(
-        request,
-        path,
-        root=_METADATA_ROOT,
-        params=None,
-        recursive=False,
-        retry_count=5,
-        headers=None,
+    request,
+    path,
+    root=_METADATA_ROOT,
+    params=None,
+    recursive=False,
+    retry_count=5,
+    headers=None,
+    return_none_for_not_found_error=False,
 ):
-    # 루트와 경로 결합하여 전체 url을 생성한다
+    """Fetch a resource from the metadata server.
+
+    Args:
+        request (google.auth.transport.Request): A callable used to make
+            HTTP requests.
+        path (str): The resource to retrieve. For example,
+            ``'instance/service-accounts/default'``.
+        root (str): The full path to the metadata server root.
+        params (Optional[Mapping[str, str]]): A mapping of query parameter
+            keys to values.
+        recursive (bool): Whether to do a recursive query of metadata. See
+            https://cloud.google.com/compute/docs/metadata#aggcontents for more
+            details.
+        retry_count (int): How many times to attempt connecting to metadata
+            server using above timeout.
+        headers (Optional[Mapping[str, str]]): Headers for the request.
+        return_none_for_not_found_error (Optional[bool]): If True, returns None
+            for 404 error instead of throwing an exception.
+
+    Returns:
+        Union[Mapping, str]: If the metadata server returns JSON, a mapping of
+            the decoded JSON is return. Otherwise, the response content is
+            returned as a string.
+
+    Raises:
+        google.auth.exceptions.TransportError: if an error occurred while
+            retrieving metadata.
+    """
     base_url = urljoin(root, path)
     query_params = {} if params is None else params
 
@@ -152,11 +180,17 @@ def get(
             "metadata service. Compute Engine Metadata server unavailable".format(url)
         )
 
-    # 응답이 성공했을 시 상태코드가 200인지 확인한다
+    content = _helpers.from_bytes(response.data)
+
+    if response.status == http_client.NOT_FOUND and return_none_for_not_found_error:
+        _LOGGER.info(
+            "Compute Engine Metadata server call to %s returned 404, reason: %s",
+            path,
+            content,
+        )
+        return None
+
     if response.status == http_client.OK:
-        # 응답 데이터를 문자열로 디코딩한다
-        content = _helpers.from_bytes(response.data)
-        # 응답의 타입이 JSON일 경우 JSON으로 디코딩 하여 반환한다
         if (
                 _helpers.parse_content_type(response.headers["content-type"])
                 == "application/json"
@@ -172,15 +206,14 @@ def get(
         # JSON이 아니라면 그대로 반환한다
         else:
             return content
-    else:
-        # 모든 요청이 실패 했다면 TransportError에러를 발생시킨다.
-        raise exceptions.TransportError(
-            "Failed to retrieve {} from the Google Compute Engine "
-            "metadata service. Status: {} Response:\n{}".format(
-                url, response.status, response.data
-            ),
-            response,
-        )
+
+    raise exceptions.TransportError(
+        "Failed to retrieve {} from the Google Compute Engine "
+        "metadata service. Status: {} Response:\n{}".format(
+            url, response.status, response.data
+        ),
+        response,
+    )
 
 
 # get 함수를 호출하여 메타데이터 서버에서 project/product-id 리소스를 가져온다
@@ -188,7 +221,29 @@ def get_project_id(request):
     return get(request, "project/project-id")
 
 
-# GCE 메타데이터 서버에서 서비스 계정에 관한 정보를 가져오는 함수
+def get_universe_domain(request):
+    """Get the universe domain value from the metadata server.
+
+    Args:
+        request (google.auth.transport.Request): A callable used to make
+            HTTP requests.
+
+    Returns:
+        str: The universe domain value. If the universe domain endpoint is not
+        not found, return the default value, which is googleapis.com
+
+    Raises:
+        google.auth.exceptions.TransportError: if an error other than
+            404 occurs while retrieving metadata.
+    """
+    universe_domain = get(
+        request, "universe/universe_domain", return_none_for_not_found_error=True
+    )
+    if not universe_domain:
+        return "googleapis.com"
+    return universe_domain
+
+
 def get_service_account_info(request, service_account="default"):
     path = "instance/service-accounts/{0}/".format(service_account)
     return get(request, path, params={"recursive": "true"})
