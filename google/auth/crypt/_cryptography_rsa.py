@@ -1,24 +1,3 @@
-# Copyright 2017 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""RSA verifier and signer that use the ``cryptography`` library.
-
-This is a much faster implementation than the default (in
-``google.auth.crypt._python_rsa``), which depends on the pure-Python
-``rsa`` library.
-"""
-
 import cryptography.exceptions
 from cryptography.hazmat import backends
 from cryptography.hazmat.primitives import hashes
@@ -29,123 +8,100 @@ import cryptography.x509
 from google.auth import _helpers
 from google.auth.crypt import base
 
+# PEM 형식의 인증서를 확인하기 위한 마커
 _CERTIFICATE_MARKER = b"-----BEGIN CERTIFICATE-----"
+# 암호화 작업을 수행하기 위한 백엔드를 지정한다
 _BACKEND = backends.default_backend()
+# 서명 및 암호화에 사용되는 패딩 방식을 지정한다
 _PADDING = padding.PKCS1v15()
+# 사용하는 해시 알고리즘
 _SHA256 = hashes.SHA256()
 
 
+# 공개 키를 이용하여 서명을 검증하는 기능을 수행하는 클래스
 class RSAVerifier(base.Verifier):
-    """Verifies RSA cryptographic signatures using public keys.
-
-    Args:
-        public_key (
-                cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey):
-            The public key used to verify signatures.
-    """
-
     def __init__(self, public_key):
         self._pubkey = public_key
 
+    # 주어진 메시지와 서명을 사용하여 서명의 유효성을 확인하는 메소드
     @_helpers.copy_docstring(base.Verifier)
     def verify(self, message, signature):
+        # 메시지를 문자열에서 바이트열 형태로 변환한다
         message = _helpers.to_bytes(message)
+        # 서명의 유효 여부에 따라 True 혹은 False를 반환한다
         try:
             self._pubkey.verify(signature, message, _PADDING, _SHA256)
             return True
         except (ValueError, cryptography.exceptions.InvalidSignature):
             return False
 
+    #  문자열로부터 공개 키 혹은 인증서를 파싱하여 RSAVerifier 클래스의 인스턴스를 생성하는 메소드
     @classmethod
     def from_string(cls, public_key):
-        """Construct an Verifier instance from a public key or public
-        certificate string.
-
-        Args:
-            public_key (Union[str, bytes]): The public key in PEM format or the
-                x509 public key certificate.
-
-        Returns:
-            Verifier: The constructed verifier.
-
-        Raises:
-            ValueError: If the public key can't be parsed.
-        """
+        # public_key를 바이트열로 변환한다
         public_key_data = _helpers.to_bytes(public_key)
 
+        # 입력된 문자열이 인증서인지를 확인한다
         if _CERTIFICATE_MARKER in public_key_data:
+            # X.509 형식의 인증서 객체로 변환한다
             cert = cryptography.x509.load_pem_x509_certificate(
                 public_key_data, _BACKEND
             )
+            # 인증서에서 공개 키 값을 추출한다
             pubkey = cert.public_key()
-
+        # 인증서가 아니라면 문자열로부터 공개 키를 직접 파싱한다
         else:
             pubkey = serialization.load_pem_public_key(public_key_data, _BACKEND)
-
+        # RSAVerifier 클래스의 새로운 인스턴스를 생성해 반환한다
         return cls(pubkey)
 
 
 class RSASigner(base.Signer, base.FromServiceAccountMixin):
-    """Signs messages with an RSA private key.
-
-    Args:
-        private_key (
-                cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey):
-            The private key to sign with.
-        key_id (str): Optional key ID used to identify this private key. This
-            can be useful to associate the private key with its associated
-            public key or certificate.
-    """
-
     def __init__(self, private_key, key_id=None):
         self._key = private_key
         self._key_id = key_id
 
-    @property  # type: ignore
+    @property
     @_helpers.copy_docstring(base.Signer)
     def key_id(self):
         return self._key_id
 
+    # 주어진 메시지에 서명을 생성하는 메소드
     @_helpers.copy_docstring(base.Signer)
     def sign(self, message):
+        # 주어진 메시지를 바이트열로 변환한다
         message = _helpers.to_bytes(message)
+        # RSA 개인 키 객체를 사용하여 주어진 메시지에 대한 서명을 생성해 반환한다
         return self._key.sign(message, _PADDING, _SHA256)
 
+    # RSA 개인 키를 넘겨받아 RSASigner 클래스의 새로운 인스턴스를 생성하는 메소드
     @classmethod
     def from_string(cls, key, key_id=None):
-        """Construct a RSASigner from a private key in PEM format.
-
-        Args:
-            key (Union[bytes, str]): Private key in PEM format.
-            key_id (str): An optional key id used to identify the private key.
-
-        Returns:
-            google.auth.crypt._cryptography_rsa.RSASigner: The
-            constructed signer.
-
-        Raises:
-            ValueError: If ``key`` is not ``bytes`` or ``str`` (unicode).
-            UnicodeDecodeError: If ``key`` is ``bytes`` but cannot be decoded
-                into a UTF-8 ``str``.
-            ValueError: If ``cryptography`` "Could not deserialize key data."
-        """
+        # 주어진 키를 바이트열로 변환한다
         key = _helpers.to_bytes(key)
+        # PEM 형식의 개인 키 문자열을 RSA 개인 키 객체로 파싱한다
         private_key = serialization.load_pem_private_key(
             key, password=None, backend=_BACKEND
         )
+        # RSASigner 클래스의 새로운 인스턴스를 생성해 반환한다
         return cls(private_key, key_id=key_id)
 
+    # 객체를 직렬화하는 메소드
     def __getstate__(self):
-        """Pickle helper that serializes the _key attribute."""
+        # __dict__는 객체의 속성을 담고 있는 딕셔너리로, 객체의 상태를 표현하는데 사용된다
         state = self.__dict__.copy()
+        # _key 속성에 있는 RSA 개인 키를 직렬화하여 저장한다
         state["_key"] = self._key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
+            encoding=serialization.Encoding.PEM,  # PEM 형식으로 변환한다
+            format=serialization.PrivateFormat.PKCS8,  # PKCS8 형식으로 인코딩 한다
+            encryption_algorithm=serialization.NoEncryption(),  # 암호화를 사용하지 않는다
         )
+        # 직렬화된 상태를 담고있는 딕셔너리를 반환한다
         return state
 
+    # 객체를 역질렬화하는 메소드
     def __setstate__(self, state):
-        """Pickle helper that deserializes the _key attribute."""
+        # 직렬화된 키를 RSA 개인 키 객체로 변환한다
         state["_key"] = serialization.load_pem_private_key(state["_key"], None)
+        # 역직렬화된 상태를 __dict__에 업데이트하여 객체를 복원한다
         self.__dict__.update(state)

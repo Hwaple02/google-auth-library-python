@@ -1,126 +1,60 @@
-# Copyright 2016 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Base classes for cryptographic signers and verifiers."""
-
 import abc
 import io
 import json
 
 from google.auth import exceptions
 
+# 서비스 계정의 개인 키
 _JSON_FILE_PRIVATE_KEY = "private_key"
+# 서비스 계정의 개인 키를 식별하는데 사용되는 키
 _JSON_FILE_PRIVATE_KEY_ID = "private_key_id"
 
 
+# 여러 종류의 검증 기능의 구현을 위한 추상 클래스
 class Verifier(metaclass=abc.ABCMeta):
-    """Abstract base class for crytographic signature verifiers."""
-
+    # 기능이 구현되어 있지 않아 상속하는 클래스는 추상 메소드를 오버라이드해 미구현된 기능을 구현해야 한다
+    # 주어진 메시지와 서명을 사용하여 서명의 유효성을 확인하는 메소드
     @abc.abstractmethod
     def verify(self, message, signature):
-        """Verifies a message against a cryptographic signature.
-
-        Args:
-            message (Union[str, bytes]): The message to verify.
-            signature (Union[str, bytes]): The cryptography signature to check.
-
-        Returns:
-            bool: True if message was signed by the private key associated
-            with the public key that this object was constructed with.
-        """
-        # pylint: disable=missing-raises-doc,redundant-returns-doc
-        # (pylint doesn't recognize that this is abstract)
         raise NotImplementedError("Verify must be implemented")
 
 
+# 여러 종류의 서명 알고리즘 및 키 관리 체계를 지원하는 다양한 서명 클래스 구현을 위한 추상 클래스
 class Signer(metaclass=abc.ABCMeta):
-    """Abstract base class for cryptographic signers."""
-
+    # 기능이 구현되어 있지 않아 상속하는 클래스는 추상 메소드들을 오버라이드해 미구현된 기능을 구현해야 한다
+    # key_id 속성을 제공하는 메소드
     @abc.abstractproperty
     def key_id(self):
-        """Optional[str]: The key ID used to identify this private key."""
         raise NotImplementedError("Key id must be implemented")
 
+    # 서명 기능을 수행하는 메소드
     @abc.abstractmethod
     def sign(self, message):
-        """Signs a message.
-
-        Args:
-            message (Union[str, bytes]): The message to be signed.
-
-        Returns:
-            bytes: The signature of the message.
-        """
-        # pylint: disable=missing-raises-doc,redundant-returns-doc
-        # (pylint doesn't recognize that this is abstract)
         raise NotImplementedError("Sign must be implemented")
 
 
 class FromServiceAccountMixin(metaclass=abc.ABCMeta):
-    """Mix-in to enable factory constructors for a Signer."""
-
+    # 기능이 구현되어 있지 않아 상속하는 클래스는 반드시 추상 메소드들을 오버라이드해 미구현된 기능을 구현해야 한다
+    # 문자열 형태의 개인 키를 받아 Signer 인스턴스를 생성하는 메소드
     @abc.abstractmethod
     def from_string(cls, key, key_id=None):
-        """Construct an Signer instance from a private key string.
-
-        Args:
-            key (str): Private key as a string.
-            key_id (str): An optional key id used to identify the private key.
-
-        Returns:
-            google.auth.crypt.Signer: The constructed signer.
-
-        Raises:
-            ValueError: If the key cannot be parsed.
-        """
         raise NotImplementedError("from_string must be implemented")
-
+    # 서비스 계정 정보를 가져와 Signer 인스턴스를 생성하는 메소드
     @classmethod
     def from_service_account_info(cls, info):
-        """Creates a Signer instance instance from a dictionary containing
-        service account info in Google format.
-
-        Args:
-            info (Mapping[str, str]): The service account info in Google
-                format.
-
-        Returns:
-            google.auth.crypt.Signer: The constructed signer.
-
-        Raises:
-            ValueError: If the info is not in the expected format.
-        """
+        # info 딕셔너리 안에는 _JSON_FILE_PRIVATE_KEY 키가 존재해야만 한다
         if _JSON_FILE_PRIVATE_KEY not in info:
             raise exceptions.MalformedError(
                 "The private_key field was not found in the service account " "info."
             )
-
+        # 서비스 계정 정보가 있는 JSON 파일의 정보를 바탕으로 Signerㄴ 인스턴스를 생성해 반환한다
         return cls.from_string(
             info[_JSON_FILE_PRIVATE_KEY], info.get(_JSON_FILE_PRIVATE_KEY_ID)
         )
 
+    # 서비스 계정 정보가 있는 JSON 파일을 읽은 후 데이터를 딕셔너리로 로드하는 메소드
     @classmethod
     def from_service_account_file(cls, filename):
-        """Creates a Signer instance from a service account .json file
-        in Google format.
-
-        Args:
-            filename (str): The path to the service account .json file.
-
-        Returns:
-            google.auth.crypt.Signer: The constructed signer.
-        """
         with io.open(filename, "r", encoding="utf-8") as json_file:
             data = json.load(json_file)
 

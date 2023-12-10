@@ -1,22 +1,3 @@
-# Copyright 2016 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Provides helper methods for talking to the Compute Engine metadata server.
-
-See https://cloud.google.com/compute/docs/metadata for more details.
-"""
-
 import datetime
 import http.client as http_client
 import json
@@ -29,100 +10,73 @@ from google.auth import environment_vars
 from google.auth import exceptions
 from google.auth import metrics
 
+# 로거 설정: 현재 모듈의 로그를 가져온다
 _LOGGER = logging.getLogger(__name__)
 
-# Environment variable GCE_METADATA_HOST is originally named
-# GCE_METADATA_ROOT. For compatiblity reasons, here it checks
-# the new variable first; if not set, the system falls back
-# to the old variable.
+# 환경변수에서 값을 가져와 GCE(Google Compute Engine) 메타데이터 서버의 호스트를 설정한다
 _GCE_METADATA_HOST = os.getenv(environment_vars.GCE_METADATA_HOST, None)
-if not _GCE_METADATA_HOST:
+if not _GCE_METADATA_HOST:  # 가져온 값이 존재하지 않는다면 기존에 사용되던 환경변수를 사용한다
     _GCE_METADATA_HOST = os.getenv(
         environment_vars.GCE_METADATA_ROOT, "metadata.google.internal"
     )
+# 최종적으로 구성된 메타데이터 서버의 루트 URL을 나타낸다
 _METADATA_ROOT = "http://{}/computeMetadata/v1/".format(_GCE_METADATA_HOST)
 
-# This is used to ping the metadata server, it avoids the cost of a DNS
-# lookup.
+# GCE 메타데이터 서버의 IP주소를 가져온다 (단, 환경변수가 설정되어 있지 않다면 기본값으로 "169.254.169.254"를 사용한다)
 _METADATA_IP_ROOT = "http://{}".format(
     os.getenv(environment_vars.GCE_METADATA_IP, "169.254.169.254")
 )
+# HTTP 요청 헤더의 이름
 _METADATA_FLAVOR_HEADER = "metadata-flavor"
+# HTTP 요청 헤더의 값
 _METADATA_FLAVOR_VALUE = "Google"
+# HTTP 요청 시 사용할 헤더들을 나타내는 딕셔너리
 _METADATA_HEADERS = {_METADATA_FLAVOR_HEADER: _METADATA_FLAVOR_VALUE}
 
-# Timeout in seconds to wait for the GCE metadata server when detecting the
-# GCE environment.
+# GCE 메타데이터 서버에 대한 타임아웃을 설정한다
 try:
-    _METADATA_DEFAULT_TIMEOUT = int(os.getenv("GCE_METADATA_TIMEOUT", 3))
-except ValueError:  # pragma: NO COVER
-    _METADATA_DEFAULT_TIMEOUT = 3
+    _METADATA_DEFAULT_TIMEOUT = int(os.getenv("GCE_METADATA_TIMEOUT", 3))  # 환경변수가 존재하지 않을 시 기본값 3
+except ValueError:
+    _METADATA_DEFAULT_TIMEOUT = 3  # 정수로 값 할당이 불가능해 오류 발생시 기본값 3
 
-# Detect GCE Residency
 _GOOGLE = "Google"
 _GCE_PRODUCT_NAME_FILE = "/sys/class/dmi/id/product_name"
 
 
+# GCE에서 실행 중인지 감지하는 함수
 def is_on_gce(request):
-    """Checks to see if the code runs on Google Compute Engine
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-
-    Returns:
-        bool: True if the code runs on Google Compute Engine, False otherwise.
-    """
+    # 메타데이터 서버에 핑을 보내서 서버의 응답여부를 확인한다
     if ping(request):
         return True
 
+    # 현재 운영체재가 Windows인지 확인한다
     if os.name == "nt":
-        # TODO: implement GCE residency detection on Windows
         return False
 
-    # Detect GCE residency on Linux
+    # 현재 운영체재가 Linux환경인지 확인한다
     return detect_gce_residency_linux()
 
 
+# 현재 운영체제가 Linux 환경인지 확인하는 함수
 def detect_gce_residency_linux():
-    """Detect Google Compute Engine residency by smbios check on Linux
-
-    Returns:
-        bool: True if the GCE product name file is detected, False otherwise.
-    """
     try:
+        # /sys/class/dmi/id/product_name 파일을 내용을 읽어온다
         with open(_GCE_PRODUCT_NAME_FILE, "r") as file_obj:
             content = file_obj.read().strip()
 
     except Exception:
         return False
-
+    # 읽어온 내용이 Google로 시작하는지 여부를 통해 GCE환경이 Linux환경인지 감지한다
     return content.startswith(_GOOGLE)
 
 
+# GCE 메타데이터 서버에 핑을 보내서 서버의 응답여부 확인하는 함수
 def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
-    """Checks to see if the metadata server is available.
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-        timeout (int): How long to wait for the metadata server to respond.
-        retry_count (int): How many times to attempt connecting to metadata
-            server using above timeout.
-
-    Returns:
-        bool: True if the metadata server is reachable, False otherwise.
-    """
-    # NOTE: The explicit ``timeout`` is a workaround. The underlying
-    #       issue is that resolving an unknown host on some networks will take
-    #       20-30 seconds; making this timeout short fixes the issue, but
-    #       could lead to false negatives in the event that we are on GCE, but
-    #       the metadata resolution was particularly slow. The latter case is
-    #       "unlikely".
     retries = 0
     headers = _METADATA_HEADERS.copy()
     headers[metrics.API_CLIENT_HEADER] = metrics.mds_ping()
 
+    # 주어진 횟수만큼 서버에 핑을 보내고 응답한다면 True반환
     while retries < retry_count:
         try:
             response = request(
@@ -131,11 +85,12 @@ def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
 
             metadata_flavor = response.headers.get(_METADATA_FLAVOR_HEADER)
             return (
-                response.status == http_client.OK
-                and metadata_flavor == _METADATA_FLAVOR_VALUE
+                    response.status == http_client.OK
+                    and metadata_flavor == _METADATA_FLAVOR_VALUE
             )
 
         except exceptions.TransportError as e:
+            # GCE 메타데이터 서버 접근 불가 경고
             _LOGGER.warning(
                 "Compute Engine Metadata server unavailable on "
                 "attempt %s of %s. Reason: %s",
@@ -148,41 +103,18 @@ def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
     return False
 
 
+# 메타데이터 서버에서 리소스를 가져오는 함수
+# HTTP GET 요청을 사용하여 메타데이터 서버에 특정 리소스를 요청하고 응답을 처리하여 결과를 반환한다
 def get(
-    request,
-    path,
-    root=_METADATA_ROOT,
-    params=None,
-    recursive=False,
-    retry_count=5,
-    headers=None,
+        request,
+        path,
+        root=_METADATA_ROOT,
+        params=None,
+        recursive=False,
+        retry_count=5,
+        headers=None,
 ):
-    """Fetch a resource from the metadata server.
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-        path (str): The resource to retrieve. For example,
-            ``'instance/service-accounts/default'``.
-        root (str): The full path to the metadata server root.
-        params (Optional[Mapping[str, str]]): A mapping of query parameter
-            keys to values.
-        recursive (bool): Whether to do a recursive query of metadata. See
-            https://cloud.google.com/compute/docs/metadata#aggcontents for more
-            details.
-        retry_count (int): How many times to attempt connecting to metadata
-            server using above timeout.
-        headers (Optional[Mapping[str, str]]): Headers for the request.
-
-    Returns:
-        Union[Mapping, str]: If the metadata server returns JSON, a mapping of
-            the decoded JSON is return. Otherwise, the response content is
-            returned as a string.
-
-    Raises:
-        google.auth.exceptions.TransportError: if an error occurred while
-            retrieving metadata.
-    """
+    # 루트와 경로 결합하여 전체 url을 생성한다
     base_url = urljoin(root, path)
     query_params = {} if params is None else params
 
@@ -196,12 +128,15 @@ def get(
     url = _helpers.update_query(base_url, query_params)
 
     retries = 0
+    # 연결 시도 횟수에 도달할 때까지 서버에 GET 요청을 보낸다
     while retries < retry_count:
         try:
+            # 요청 보내기
             response = request(url=url, method="GET", headers=headers_to_use)
             break
 
         except exceptions.TransportError as e:
+            # 에러 발생시 로그 남기고 재시도
             _LOGGER.warning(
                 "Compute Engine Metadata server unavailable on "
                 "attempt %s of %s. Reason: %s",
@@ -211,16 +146,20 @@ def get(
             )
             retries += 1
     else:
+        # 모든 요청이 실패 했다면 TransportError를 발생시킨다
         raise exceptions.TransportError(
             "Failed to retrieve {} from the Google Compute Engine "
             "metadata service. Compute Engine Metadata server unavailable".format(url)
         )
 
+    # 응답이 성공했을 시 상태코드가 200인지 확인한다
     if response.status == http_client.OK:
+        # 응답 데이터를 문자열로 디코딩한다
         content = _helpers.from_bytes(response.data)
+        # 응답의 타입이 JSON일 경우 JSON으로 디코딩 하여 반환한다
         if (
-            _helpers.parse_content_type(response.headers["content-type"])
-            == "application/json"
+                _helpers.parse_content_type(response.headers["content-type"])
+                == "application/json"
         ):
             try:
                 return json.loads(content)
@@ -230,9 +169,11 @@ def get(
                     "metadata service: {:.20}".format(content)
                 )
                 raise new_exc from caught_exc
+        # JSON이 아니라면 그대로 반환한다
         else:
             return content
     else:
+        # 모든 요청이 실패 했다면 TransportError에러를 발생시킨다.
         raise exceptions.TransportError(
             "Failed to retrieve {} from the Google Compute Engine "
             "metadata service. Status: {} Response:\n{}".format(
@@ -242,84 +183,41 @@ def get(
         )
 
 
+# get 함수를 호출하여 메타데이터 서버에서 project/product-id 리소스를 가져온다
 def get_project_id(request):
-    """Get the Google Cloud Project ID from the metadata server.
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-
-    Returns:
-        str: The project ID
-
-    Raises:
-        google.auth.exceptions.TransportError: if an error occurred while
-            retrieving metadata.
-    """
     return get(request, "project/project-id")
 
 
+# GCE 메타데이터 서버에서 서비스 계정에 관한 정보를 가져오는 함수
 def get_service_account_info(request, service_account="default"):
-    """Get information about a service account from the metadata server.
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-        service_account (str): The string 'default' or a service account email
-            address. The determines which service account for which to acquire
-            information.
-
-    Returns:
-        Mapping: The service account's information, for example::
-
-            {
-                'email': '...',
-                'scopes': ['scope', ...],
-                'aliases': ['default', '...']
-            }
-
-    Raises:
-        google.auth.exceptions.TransportError: if an error occurred while
-            retrieving metadata.
-    """
     path = "instance/service-accounts/{0}/".format(service_account)
-    # See https://cloud.google.com/compute/docs/metadata#aggcontents
-    # for more on the use of 'recursive'.
     return get(request, path, params={"recursive": "true"})
 
 
+# GCE 메타데이터 서버에서 서비스 계정에 대한 OAuth 2.0 액세스 토큰을 가져오는 함수
 def get_service_account_token(request, service_account="default", scopes=None):
-    """Get the OAuth 2.0 access token for a service account.
-
-    Args:
-        request (google.auth.transport.Request): A callable used to make
-            HTTP requests.
-        service_account (str): The string 'default' or a service account email
-            address. The determines which service account for which to acquire
-            an access token.
-        scopes (Optional[Union[str, List[str]]]): Optional string or list of
-            strings with auth scopes.
-    Returns:
-        Tuple[str, datetime]: The access token and its expiration.
-
-    Raises:
-        google.auth.exceptions.TransportError: if an error occurred while
-            retrieving metadata.
-    """
     if scopes:
+        # 스코프가 지정되어 있으면 스트링이 아닌 경우 이를 합쳐서 쿼리 파라미터로 사용한다
         if not isinstance(scopes, str):
             scopes = ",".join(scopes)
         params = {"scopes": scopes}
     else:
         params = None
 
+    # 액세스 토큰을 요청하기 위한 헤더를 설정한다
     metrics_header = {
         metrics.API_CLIENT_HEADER: metrics.token_request_access_token_mds()
     }
 
+    # 특정 서비스 계정의 액세스 토큰을 가져온다
     path = "instance/service-accounts/{0}/token".format(service_account)
     token_json = get(request, path, params=params, headers=metrics_header)
+
+    # 액세스 토큰의 만료 시간을 계산한다
     token_expiry = _helpers.utcnow() + datetime.timedelta(
         seconds=token_json["expires_in"]
     )
+
+    # 액세스 토큰과 만료 시간을 반환한다
     return token_json["access_token"], token_expiry
+

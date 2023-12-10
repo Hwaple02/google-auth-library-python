@@ -204,7 +204,7 @@ def test_verify_firebase_token_clock_skew(verify_token):
 def test_fetch_id_token_credentials_optional_request(monkeypatch):
     monkeypatch.delenv(environment_vars.CREDENTIALS, raising=False)
 
-    # Test a request object is created if not provided
+    # Test a req``uest object is created if not provided
     with mock.patch("google.auth.compute_engine._metadata.ping", return_value=True):
         with mock.patch(
             "google.auth.compute_engine.IDTokenCredentials.__init__", return_value=None
@@ -233,9 +233,9 @@ def test_fetch_id_token_credentials_from_metadata_server(monkeypatch):
 
 def test_fetch_id_token_credentials_from_explicit_cred_json_file(monkeypatch):
     monkeypatch.setenv(environment_vars.CREDENTIALS, SERVICE_ACCOUNT_FILE)
-
+    from google.auth import impersonated_credentials
     cred = id_token.fetch_id_token_credentials(ID_TOKEN_AUDIENCE)
-    assert isinstance(cred, service_account.IDTokenCredentials)
+    assert isinstance(cred, (service_account.IDTokenCredentials, impersonated_credentials.IDTokenCredentials))
     assert cred._target_audience == ID_TOKEN_AUDIENCE
 
 

@@ -1,0 +1,164 @@
+추가적 공부가 필요한 부분: HTTP 요청에 대한 공부 필요, 쿼리에 대한 공부
+
+init.py
+
+# Apache 2.0 라이센스 안내문
+
+# 외부에 노출할 라이브러리 import
+
+# __all__을 사용해 외부에 노출되는 클래스 선별
+
+
+_metadata.py
+
+# GCE란 google computer engine의 약자, 구글 클라우드 플랫폼(GCP)에서 제공하는
+가상 머신 인프라를 나타낸다.
+따라서 GCE 메타데이터 서버는 GCE 인스턴스에서 실행중인 가상 머신의 메타데이터를 제공하는 서버이다.
+
+# 메타데이터: 인스턴스의 설정, 네트워크 구성, 서비스 계정 정보등과 같은 다양한 정보를 포함한다.
+# GCE 메타데이터 서버가 제공하는 것:
+- 인스턴스 메타데이터: 인스턴스의 특정 정보 및 설정 (ex. ID, key값)
+- 서비스 계정 정보: 인스턴스가 사용하는 서비스 계정에 대한 인증 정보 및 권한
+- 네트워크 설정: IP주소, 방화벽 규칙, 네트워크 태그등 네트워크와 관련된 설정
+현재 맥락에서 인스턴스의 뜻: 가상 머신 인스턴스를 의미함 - 가상 환경에서 독립적으로 실행되는 가상 머신, GCE외에 예시로는 AWS의 Amazon EC2, 마이크로소프트 Azure의 VM 등이 있음
+
+# import 문
+
+- line 38
+    _GCE_METADATA_HOST 는 GCE 메타데이터 서버의 호스트를 나타내는 변수
+    environment_vars에 여러 환경 변수의 이름이 상수로 정의, os.getenv를 통해 GCE_METADATA_HOST에서 호스트 정보를 가져온다. 해당 변수가 설저되어 있지 않다면 None 반환
+    만약 환경변수에서 가져온 값이 존재하지 않는다면 기존에 사용되던 환경변수 GCE_METADATA_ROOT에서
+    호스트 정보 가져옴.
+    기본값으로는 metadata.google.internal 사용
+    _METADATA_ROOT 는 최종적으로 구성된 메타데이터 서버의 루트 URL을 나타낸다.
+
+- line 47
+    GCE 메타데이터 서버의 IP주소를 가져오고 만약 해당 환경 변수가 설정되어 있지 않다면 기본값으로는
+    169.254.169.254를 사용한다.
+    이를 통해 얻는 점: DNS 조회를 피하고 직접 IP주소를 사용하여 메타 데이터 서버에 접근한다.
+    _METADATA_FLAVOR_HEADER: HTTP 요청 헤더의 이름 (metadata-flavor)
+    _METADATA_HEADERS: HTTP 요청 헤더의 값 (Google)
+    _METADATA_HEADERS: HTTP 요청 시 사용할 헤더들을 나타내는 딕셔너리
+
+- line 56
+    _METADATA_DEFAULT_TIMEOUT: GCE 메타데이터 서버에 대한 타임아웃 설정
+    환경변수에서 타임 아웃 값을 가져오고 설정되어 있지 않다면 기본값으로 3을 사용한다.
+    만약 정수로 값 할당이 안되어 ValueError가 발생한다면 기본값으로 3을 설정한다.
+
+- line 62 (이 부분 약간 이해 안감)
+    GCE에서 실행 중인지를 감지하는 부분 GCE에서 실행 중인 경우, 특정 파일의 내용을 확인하여 감지한다.
+    _GCE_PRODUCT_NAME_FILE: GCE에서 실행 중인지 감지하기 위해 확인할 파일의 경로를 나타낸다.
+    일반적으로 /sys/class/dmi/id/product_name 파일은 GCE에서 실행 중인 경우 "Google"이라는 값으로 설정되어 있다. 
+    이 파일은 시스템의 DMI(Direct Media Interface) 정보 중 제품 이름을 나타내는 부분.
+    이 파일의 내용이 "Google"로 설정되어 있다면, 스크립트나 코드에서는 해당 환경이 GCE에서 실행 중인 것으로 간주한다.
+
+- line 66: is_on_gce 함수
+    ping: 메타데이터 서버에 핑을 보내서 서버의 응답여부 확인
+    os.name = "nt" 현재 운영체제가 Windows인지 확인한다.
+    detect_gce_residency_linux 현재 운영체제가 Linux환경인지 확인한다.
+
+- line 87: detect_gce_residency_linux 함수
+    이 함수는 /sys/class/dmi/id/product_name 파일을 확인하여 해당 파일의 내용이 Google로 시작하는지 여부를 통해 GCE환경을 감지한다.
+    _GCE_PRODUCT_NAME_FILE에 지정된 파일을 읽어 저장
+    오류 발생 예외처리
+    파일이 정상적으로 열렸다면 내용이 Google로 시작하는지 여부 판단해 반환한다.
+
+- line 103: ping 함수
+    GCE 메타데이터 서버에 핑을 보내서 서버의 응답여부 확인하는 함수, 주어진 횟수만큼 서버에 핑을 보내고 응답한다면 True반환
+
+    timeout: 메타데이터 서버로의 요청에 대한 타임아웃 설정 (_METADATA_DEFAULT_TIMEOUT이 기본값)
+    retry_count: 메타데이터 서버에 대한 연결 시도 횟수 (기본값 3)
+
+    retries: 현재까지의 연결 시도 횟수
+    headers: 메타데이터 서버에 HTTP요청에 사용되는 헤더 (_METADATA_HEADERS의 복사본 사용)
+    # metrics.API_CLIENT_HEADER 또한 헤더로 설정된다.
+    # metrics:API_CLIENT_HEADER: 구글 클라우드 클라이언트 라이브러리에서 정의한 상수, 클라이언트의 API 사용을 추적하기 $ # 위한 헤더의 이름
+    # metrics.mds_ping: 구글 클라우드 클라이언트 라이브러리에서 제공하는 함수 메타데이터 서버에 특정 핑을 보내는 행위
+    # 따라서 이 둘은 클라이언트의 API사용 및 메타데이터 서버와의 통신을 추적하는데 사용된다
+
+    retries < retry_count인 동안 메타데이터 서버에 GET 요청 보낸다.
+    응답이 올바르게 받아진다면 응답의 상태코드는 200이고 metadata-flavor의 값이 Google일 때 True 반환
+    예외가 발생한 경우 로그를 남기고 재시도 횟수 증가
+    최종 실패시 False 반환
+
+- line 151: get 함수
+    메타데이터 서버에서 리소스를 가져오는 함수
+    HTTP GET 요청을 사용하여 메타데이터 서버에 특정 리소스를 요청하고 응답을 처리하여 결과 반환
+    
+    request: google.auth.transport.Request를 구현한 객체로 HTTP 요청을 만들기 우해 사용된다.
+    path: 가져올 리소스의 경로를 나타낸다. 
+    root: 메타데이터 서버의 루트 경로를 나타낸다. (기본값 _METADATA_ROOT, 일반적으로는 변경할 필요 없음)
+    # params: 쿼리 문자열의 매개변수로 사용될 매핑이다.
+    # recursive: 리소스를 재귀적으로 쿼리할지 여부를 나타낸다.
+    retry_count: 메타데이터 서버에 대한 연결 시도 횟수를 나타낸다. (기본값: 5)
+    headers: HTTP 요청에 추가될 헤더를 나타낸다.
+
+    urljoin: 루트와 경로 결합하여 전체 Url 생성
+    
+    연결 시도 횟수에 도달할 때까지 서버에 GET 요청을 보낸다.
+    에러 발생시 로그 남기고 재시도
+
+    응답이 성공했을 시 상태코드가 200인지 확인한다.
+    응답 데이터를 문자열로 디코딩한다.
+    응답의 타입이 JSON일 경우 JSON으로 디코딩 하여 반환한다.
+    JSON이 아니라면 그대로 반환
+
+    모든 요청이 실패 했다면 TransportError에러를 발생시킨다.
+
+
+- line 245: get_project_id 함수
+    get 함수를 호출하여 메타데이터 서버에서 project/product-id 리소스를 가져온다.
+
+
+- line 262: get_service_account_info 함수
+    GCE 메타데이터 서버에서 서비스 계정에 관한 정보를 가져오는 함수
+
+    get 함수를 사용하여 메타데이터 서버에 특정 서비스 계정에 대한 정보를 요청하고
+    응답에서 서비스 계정의 이메일 주소, 스코프 및 별칭과 같은 정보를 추출하여 반환한다.
+
+    스코프: 서비스 계정이 수행할 수 있는 작업의 범위를 나타낸다. (권한 범위)
+    별칭: 서비스 계정에 대한 식별자
+
+-line 291: get_service_account_token
+    GCE 메타데이터 서버에서 서비스 계정에 대한 OAuth 2.0 액세스 토큰을 가져오는 함수
+
+    get 함수를 사용하여 메타데이터 서버에 특정 서비스 계정에 대한 액세스 토큰을 요청하고
+    응답에서 액세스 토큰과 해당 토큰의 만료 시간을 튜플 형태로 반환한다.
+
+
+
+credentials.py 
+
+- line 34: Credentials 클래스
+    __init__ 메소드
+    service_account_email: 서비스 계정 이메일 (기본값 default)
+    quota_project_id: 할당량 및 청구에 사용되는 프로젝트 ID
+    scopes: 액세스 토큰에 적용될 권한 범위
+    default_scopes: 구글 클라이언트 라이브러리에서 전달하는 기본 권한 범위
+
+
+- line 77: _retrieve_info 메소드
+    서비스 계정에 대한 정보를 메타데이터 서버에서 검색하고 스코프를 업데이트 한다.
+
+    get_service_account_info: 메타데이터 서버에서 현재 서비스 계정에 대한 정보를 가져온다.
+    가져온 정보에서 서비스 계정의 이메일 주소를 추출하고, _service_account_email 속성을 업데이트한다.
+
+    사용자가 직접 요청한 스코프가 None인 경우에만 서비스 계정에서 가져온 스코프로 업데이트한다.
+    사용자가 스코프를 요청한 경우에는 덮어쓰지 않는다.
+
+
+- line 96: _metric_header_for_usage
+    # 사용 중인 인증 유형에 대한 메트릭 헤더를 반환한다.
+
+
+- line 99: refresh 메소드
+    액세스 토큰 및 스코프를 새로고침한다.
+
+
+- line 122: service_account_email 메소드
+    서비스 계정 이메일을 반환한다.
+
+
+- line 131: requires_scopes 메소드
+    액세스 토큰 요청에 스코프가 필요한지 여부를 나타낸다.
+

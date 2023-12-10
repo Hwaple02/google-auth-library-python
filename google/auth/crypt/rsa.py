@@ -1,30 +1,12 @@
-# Copyright 2017 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""RSA cryptography signer and verifier."""
-
-
 try:
-    # Prefer cryptograph-based RSA implementation.
     from google.auth.crypt import _cryptography_rsa
-
+    # _cryptography_rsa 모듈이 존재한다면 아래의 값들을 가져온다
     RSASigner = _cryptography_rsa.RSASigner
     RSAVerifier = _cryptography_rsa.RSAVerifier
-except ImportError:  # pragma: NO COVER
-    # Fallback to pure-python RSA implementation if cryptography is
-    # unavailable.
+# 만약 _cryptography_rsa 모듈이 존재하지 않는경우
+except ImportError:
+    # 순수 파이썬으로 작성된 _python_rsa 모듈에서 값들을 가져온다
     from google.auth.crypt import _python_rsa
 
-    RSASigner = _python_rsa.RSASigner  # type: ignore
-    RSAVerifier = _python_rsa.RSAVerifier  # type: ignore
+    RSASigner = _python_rsa.RSASigner
+    RSAVerifier = _python_rsa.RSAVerifier

@@ -1,51 +1,13 @@
-# Copyright 2016 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Cryptography helpers for verifying and signing messages.
-
-The simplest way to verify signatures is using :func:`verify_signature`::
-
-    cert = open('certs.pem').read()
-    valid = crypt.verify_signature(message, signature, cert)
-
-If you're going to verify many messages with the same certificate, you can use
-:class:`RSAVerifier`::
-
-    cert = open('certs.pem').read()
-    verifier = crypt.RSAVerifier.from_string(cert)
-    valid = verifier.verify(message, signature)
-
-To sign messages use :class:`RSASigner` with a private key::
-
-    private_key = open('private_key.pem').read()
-    signer = crypt.RSASigner.from_string(private_key)
-    signature = signer.sign(message)
-
-The code above also works for :class:`ES256Signer` and :class:`ES256Verifier`.
-Note that these two classes are only available if your `cryptography` dependency
-version is at least 1.4.0.
-"""
-
 from google.auth.crypt import base
 from google.auth.crypt import rsa
 
 try:
     from google.auth.crypt import es256
-except ImportError:  # pragma: NO COVER
-    es256 = None  # type: ignore
+except ImportError:
+    es256 = None
 
-if es256 is not None:  # pragma: NO COVER
+# es256 존재 여부에 따라 _all__의 내용을 달리한다
+if es256 is not None:
     __all__ = [
         "ES256Signer",
         "ES256Verifier",
@@ -54,45 +16,28 @@ if es256 is not None:  # pragma: NO COVER
         "Signer",
         "Verifier",
     ]
-else:  # pragma: NO COVER
+else:
     __all__ = ["RSASigner", "RSAVerifier", "Signer", "Verifier"]
 
-
-# Aliases to maintain the v1.0.0 interface, as the crypt module was split
-# into submodules.
+# 별칭 설정
 Signer = base.Signer
 Verifier = base.Verifier
 RSASigner = rsa.RSASigner
 RSAVerifier = rsa.RSAVerifier
 
-if es256 is not None:  # pragma: NO COVER
+if es256 is not None:
     ES256Signer = es256.ES256Signer
     ES256Verifier = es256.ES256Verifier
 
 
+# 메시지와 서명을 받아서 여러 인증서로부터 어떤 인증서가 해당 서명을 인증하는데 사용될 수 있는지 확인하는 메소드
 def verify_signature(message, signature, certs, verifier_cls=rsa.RSAVerifier):
-    """Verify an RSA or ECDSA cryptographic signature.
-
-    Checks that the provided ``signature`` was generated from ``bytes`` using
-    the private key associated with the ``cert``.
-
-    Args:
-        message (Union[str, bytes]): The plaintext message.
-        signature (Union[str, bytes]): The cryptographic signature to check.
-        certs (Union[Sequence, str, bytes]): The certificate or certificates
-            to use to check the signature.
-        verifier_cls (Optional[~google.auth.crypt.base.Signer]): Which verifier
-            class to use for verification. This can be used to select different
-            algorithms, such as RSA or ECDSA. Default value is :class:`RSAVerifier`.
-
-    Returns:
-        bool: True if the signature is valid, otherwise False.
-    """
     if isinstance(certs, (str, bytes)):
         certs = [certs]
 
     for cert in certs:
         verifier = verifier_cls.from_string(cert)
+        # 유효한 서명이 발견되면 True를 반환하고 종료한다
         if verifier.verify(message, signature):
             return True
     return False
